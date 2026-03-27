@@ -1,0 +1,35 @@
+name: Tennis Court Reserver
+# This section tells GitHub WHEN to run
+on:
+  schedule:
+    # 3:00 PM UTC is 8:00 AM Portland time (PDT)
+    # Courts usually drop right at 8:00 AM. 
+    # We trigger at 7:58 AM (14:58 UTC) to give the server time to start.
+    - cron: '58 14 * * *' 
+  
+  # This line is CRITICAL—it adds the "Run workflow" button for testing
+  workflow_dispatch: 
+
+jobs:
+  reserve_job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Playwright and Browser
+        run: |
+          pip install playwright
+          playwright install chromium
+
+      - name: Run the Sniping Script
+        env:
+          # This pulls your login safely from your "Secrets"
+          COURT_USERNAME: ${{ secrets.COURT_USERNAME }}
+          COURT_PASSWORD: ${{ secrets.COURT_PASSWORD }}
+        run: python reserve_court.py
