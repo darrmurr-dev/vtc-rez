@@ -34,9 +34,9 @@ jobs:
           COURT_PASSWORD: ${{ secrets.COURT_PASSWORD }}
         run: python reserve_court.py
 
-      - name: Upload Error Screenshot
-        if: failure()  # This tells GitHub ONLY to do this if the script crashes
+      - name: Upload Screenshots
+        if: always()  # This is the "Magic" line—it runs even if the script fails
         uses: actions/upload-artifact@v4
         with:
-          name: error-debug-screenshot
-          path: error_screenshot.png
+          name: debug-screenshots
+          path: ./*.png  # This grabs EVERY .png file created
