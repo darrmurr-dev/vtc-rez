@@ -9,66 +9,52 @@ URL = "https://pnwtennis.clubautomation.com/login"
 def reserve_court():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        )
+        # We add a larger viewport to ensure the login box isn't 'off-screen'
+        context = browser.new_context(viewport={'width': 1920, 'height': 1080})
         page = context.new_page()
 
         try:
             print(f"Navigating to {URL}...")
-            page.goto(URL, wait_until="networkidle", timeout=60000)
+            page.goto(URL, wait_until="networkidle")
             
-            # Give the site 5 seconds to load any background frames
+            # Hard wait for 5 seconds to let the 'Shadow' elements render
             time.sleep(5)
 
-            # --- SEARCHING ALL FRAMES ---
-            target_area = None
+            print("Attempting to pierce Shadow DOM for login fields...")
             
-            # 1. Check the main page first
-            if page.query_selector("#login"):
-                target_area = page
-                print("Found login box on the main page.")
-            else:
-                # 2. If not on main page, search every hidden 'iframe'
-                print(f"Not on main page. Searching {len(page.frames)} frames...")
-                for frame in page.frames:
-                    try:
-                        if frame.query_selector("#login"):
-                            target_area = frame
-                            print(f"SUCCESS: Found login box inside frame: {frame.name or 'unnamed'}")
-                            break
-                    except:
-                        continue
+            # Use 'control' selectors that ignore frame boundaries
+            # The '>>' tells Playwright to look deep into every layer
+            user_input = page.locator('id=login')
+            pass_input = page.locator('id=password')
+            login_btn = page.locator('id=loginButton')
 
-            if not target_area:
-                print("STILL CANNOT FIND LOGIN BOX. Saving debug info...")
-                page.screenshot(path="not_found_debug.png")
-                raise Exception("Could not locate the login input field in any frame.")
-
-            # --- FILLING THE CREDENTIALS ---
-            print("Filling credentials...")
-            target_area.fill("#login", USERNAME)
-            target_area.fill("#password", PASSWORD)
+            # Check if they are actually there before filling
+            user_input.wait_for(state="visible", timeout=15000)
             
-            print("Clicking Login button...")
-            target_area.click("#loginButton")
+            print("Fields found! Filling credentials...")
+            user_input.fill(USERNAME)
+            pass_input.fill(PASSWORD)
+            
+            print("Clicking Login...")
+            login_btn.click()
 
-            # Wait for the dashboard to load
+            # Verify if we moved to the dashboard
             page.wait_for_load_state("networkidle")
-            time.sleep(5)
+            time.sleep(3)
             
-            print(f"Final URL: {page.url}")
-            print(f"Final Page Title: {page.title()}")
-
+            print(f"Current URL: {page.url}")
             if "login" not in page.url:
-                print("LOGIN SUCCESSFUL!")
+                print("SUCCESS: Login achieved!")
             else:
-                print("LOGIN FAILED: Still on the login page.")
-                page.screenshot(path="login_failure_state.png")
+                print("STILL ON LOGIN: Check credentials or error messages.")
+                page.screenshot(path="login_fail_visible.png")
 
         except Exception as e:
             print(f"CRITICAL ERROR: {e}")
-            page.screenshot(path="error_trace_screenshot.png")
+            page.screenshot(path="shadow_error_screenshot.png")
+            # This captures the HTML so we can see the 'Shadow' structure if it fails
+            with open("page_source.html", "w") as f:
+                f.write(page.content())
             raise e
         finally:
             browser.close()
