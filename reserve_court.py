@@ -8,53 +8,63 @@ URL = "https://pnwtennis.clubautomation.com/login"
 
 def reserve_court():
     with sync_playwright() as p:
-        # We add 'slow_mo' to give the site's Javascript time to breathe
-        browser = p.chromium.launch(headless=True, slow_mo=500) 
+        browser = p.chromium.launch(headless=True)
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport={'width': 1280, 'height': 800}
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         page = context.new_page()
 
         try:
             print(f"Navigating to {URL}...")
-            # 'commit' means we wait for the server to acknowledge the request
-            page.goto(URL, wait_until="commit", timeout=60000)
+            page.goto(URL, wait_until="networkidle", timeout=60000)
             
-            # CRITICAL: We wait 5 seconds for the Javascript to build the form
-            print("Waiting for Javascript to build the login form...")
-            time.sleep(5) 
+            # Give the site 5 seconds to load any background frames
+            time.sleep(5)
 
-            # Attempt 1: Using the Label (Most reliable for dynamic forms)
-            print("Looking for Username field...")
-            try:
-                # This looks for the text "Username" on the screen and finds the box next to it
-                user_box = page.get_by_label("Username")
-                user_box.wait_for(state="visible", timeout=10000)
-                user_box.fill(USERNAME)
-                
-                pass_box = page.get_by_label("Password")
-                pass_box.fill(PASSWORD)
-                print("Filled credentials via Label.")
-            except:
-                print("Label failed, falling back to ID selectors...")
-                page.fill("#login", USERNAME)
-                page.fill("#password", PASSWORD)
+            # --- SEARCHING ALL FRAMES ---
+            target_area = None
+            
+            # 1. Check the main page first
+            if page.query_selector("#login"):
+                target_area = page
+                print("Found login box on the main page.")
+            else:
+                # 2. If not on main page, search every hidden 'iframe'
+                print(f"Not on main page. Searching {len(page.frames)} frames...")
+                for frame in page.frames:
+                    try:
+                        if frame.query_selector("#login"):
+                            target_area = frame
+                            print(f"SUCCESS: Found login box inside frame: {frame.name or 'unnamed'}")
+                            break
+                    except:
+                        continue
 
-            # Click the login button using the data-testid from your HTML
-            print("Clicking Login...")
-            page.locator('button[data-testid="loginFormSubmitButton"]').click()
+            if not target_area:
+                print("STILL CANNOT FIND LOGIN BOX. Saving debug info...")
+                page.screenshot(path="not_found_debug.png")
+                raise Exception("Could not locate the login input field in any frame.")
 
-            # Wait to see if we move off the login page
+            # --- FILLING THE CREDENTIALS ---
+            print("Filling credentials...")
+            target_area.fill("#login", USERNAME)
+            target_area.fill("#password", PASSWORD)
+            
+            print("Clicking Login button...")
+            target_area.click("#loginButton")
+
+            # Wait for the dashboard to load
             page.wait_for_load_state("networkidle")
             time.sleep(5)
             
             print(f"Final URL: {page.url}")
+            print(f"Final Page Title: {page.title()}")
+
             if "login" not in page.url:
-                print("SUCCESS: We are in.")
+                print("LOGIN SUCCESSFUL!")
             else:
-                print("FAILED: Still on login page. Saving debug image.")
-                page.screenshot(path="failed_login_state.png")
+                print("LOGIN FAILED: Still on the login page.")
+                page.screenshot(path="login_failure_state.png")
 
         except Exception as e:
             print(f"CRITICAL ERROR: {e}")
